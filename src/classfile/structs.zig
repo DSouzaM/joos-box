@@ -10,6 +10,7 @@ pub const ClassFile = struct {
     this_class: u16,
     super_class: u16,
     interfaces: []u16,
+    fields: []Field,
 
     fn destroy(self: ClassFile, allocator: *Allocator) void {
         for (self.constant_pool) |entry| {
@@ -17,6 +18,10 @@ pub const ClassFile = struct {
         }
         allocator.free(self.constant_pool);
         allocator.free(self.interfaces);
+        for (self.fields) |field| {
+            field.destroy(allocator);
+        }
+        allocator.free(self.fields);
     }
 };
 
@@ -100,7 +105,7 @@ pub const ConstantPoolInfo = union(ConstantPoolTag) {
     }
 };
 
-pub const AccessFlags = enum(u16) {
+pub const ClassAccessFlags = enum(u16) {
     Public = 0x0001,
     Final = 0x0010,
     Super = 0x0020,
@@ -109,4 +114,39 @@ pub const AccessFlags = enum(u16) {
     Synthetic = 0x1000,
     Annotation = 0x2000,
     Enum = 0x4000,
+};
+
+pub const Field = struct {
+    access_flags: u16,
+    name_index: u16,
+    descriptor_index: u16,
+    attributes: []Attribute,
+
+    fn destroy(self: Field, allocator: *Allocator) void {
+        for (self.attributes) |entry| {
+            entry.destroy(allocator);
+        }
+        allocator.free(self.attributes);
+    }
+};
+
+pub const FieldAccessFlags = enum(u16) {
+    Public = 0x0001,
+    Private = 0x0002,
+    Protected = 0x0004,
+    Static =  0x0008,
+    Final = 0x0010,
+    Volatile = 0x0040,
+    Transient = 0x0080,
+    Synthetic = 0x0100,
+    Enum = 0x4000,
+};
+
+pub const Attribute = struct {
+    attribute_name_index: u16,
+    info: []u8,
+
+    fn destroy(self: Attribute, allocator: *Allocator) void {
+        allocator.free(self.info);
+    }
 };

@@ -16,6 +16,7 @@ pub fn decode_class_file(input: var, allocator: *Allocator) !structs.ClassFile {
     const this_class = try read_int(u16, input);
     const super_class = try read_int(u16, input);
     const interfaces = try decode_interfaces(input, allocator);
+    const fields = try decode_fields(input, allocator);
 
     return structs.ClassFile{
         .magic = magic,
@@ -26,6 +27,7 @@ pub fn decode_class_file(input: var, allocator: *Allocator) !structs.ClassFile {
         .this_class = this_class,
         .super_class = super_class,
         .interfaces = interfaces,
+        .fields = fields,
     };
 }
 
@@ -143,6 +145,48 @@ fn decode_interfaces(input: var, allocator: *Allocator) ![]u16 {
         interface.* = try read_int(u16, input);
     }
     return interfaces;
+}
+
+fn decode_fields(input: var, allocator: *Allocator) ![]structs.Field {
+    const fields_count = try read_int(u16, input);
+    const fields = try allocator.alloc(structs.Field, fields_count);
+    for (fields) |*field| {
+        field.* = try decode_field(input, allocator);
+    }
+    return fields;
+}
+
+fn decode_field(input: var, allocator: *Allocator) !structs.Field {
+    const access_flags = try read_int(u16, input);
+    const name_index = try read_int(u16, input);
+    const descriptor_index = try read_int(u16, input);
+    const attributes = try decode_attributes(input, allocator);
+    return structs.Field {
+        .access_flags = access_flags,
+        .name_index = name_index,
+        .descriptor_index = descriptor_index,
+        .attributes = attributes,
+    };
+}
+
+fn decode_attributes(input: var, allocator: *Allocator) ![]structs.Attribute {
+    const attributes_count = try read_int(u16, input);
+    const attributes = try allocator.alloc(structs.Attribute, attributes_count);
+    for (attributes) |*attribute| {
+        attribute.* = try decode_attribute(input, allocator);
+    }
+    return attributes;
+}
+
+fn decode_attribute(input: var, allocator: *Allocator) !structs.Attribute {
+    const attribute_name_index = try read_int(u16, input);
+    const attribute_length = try read_int(u32, input);
+    const info = try allocator.alloc(u8, attribute_length);
+    if ((try input.*.read(info)) != attribute_length) unreachable;
+    return structs.Attribute {
+        .attribute_name_index = attribute_name_index,
+        .info = info,
+    };
 }
 
 test "read_int" {
@@ -279,5 +323,75 @@ test "decode_interfaces" {
     expect(decoded[0] == 0x1234);
     expect(decoded[1] == 0x5678);
 
+    allocator.free(decoded);
+}
+
+// zig fmt: off
+test "decode_fields" {
+    const allocator = std.testing.allocator;
+
+    var input = std.io.bitInStream(.Big, std.io.fixedBufferStream(&[_]u8{
+        0x00, 0x02, // fields_size = 2
+        // field 1
+        0x00, 0x02, // access_flags
+        0x00, 0x07, // name_index
+        0x00, 0x08, // descriptor_index
+        0x00, 0x01, // attributes_count = 1
+        // attribute 1
+        0x00, 0x01,             // attribute_name_index
+        0x00, 0x00, 0x00, 0x02, // attribute_length
+        0x01, 0x02,
+        // field 2
+        0x00, 0x01, // access flags
+        0x00, 0x09, // name_index
+        0x00, 0x0a, // descriptor_index
+        0x00, 0x00, // attributes_count = 0
+    }).inStream());
+    var decoded = try decode_fields(&input, allocator);
+    expect(decoded.len == 2);
+    expect(decoded[0].access_flags == @enumToInt(structs.FieldAccessFlags.Private));
+    expect(decoded[0].name_index == 0x07);
+    expect(decoded[0].descriptor_index == 0x08);
+    expect(decoded[0].attributes.len == 1);
+    expect(decoded[1].access_flags == @enumToInt(structs.FieldAccessFlags.Public));
+    expect(decoded[1].name_index == 0x09);
+    expect(decoded[1].descriptor_index == 0x0a);
+    expect(decoded[1].attributes.len == 0);
+
+    decoded[0].destroy(allocator);
+    decoded[1].destroy(allocator);
+    allocator.free(decoded);
+}
+
+// zig fmt: off
+test "decode_attributes" {
+    const allocator = std.testing.allocator;
+
+    var input = std.io.bitInStream(.Big, std.io.fixedBufferStream(&[_]u8{
+        0x00, 0x02,                                 // attributes_count = 2
+        // attribute 1
+        0x00, 0x02,                                 // attribute_name_index
+        0x00, 0x00, 0x00, 0x07,                     // attribute_length
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+        // attribute 2
+        0x00, 0x01,                                 // attribute_name_index
+        0x00, 0x00, 0x00, 0x02,                     // attribute_length
+        0x01, 0x02,
+    }).inStream());
+    var decoded = try decode_attributes(&input, allocator);
+    expect(decoded.len == 2);
+    expect(decoded[0].attribute_name_index == 0x02);
+    expect(decoded[0].info.len == 7);
+    for (decoded[0].info) |byte, i| {
+        expect(byte == (i+1));
+    }
+    expect(decoded[1].attribute_name_index == 0x01);
+    expect(decoded[1].info.len == 2);
+    for (decoded[1].info) |byte, i| {
+        expect(byte == (i+1));
+    }
+
+    decoded[0].destroy(allocator);
+    decoded[1].destroy(allocator);
     allocator.free(decoded);
 }

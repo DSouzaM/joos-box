@@ -21,4 +21,15 @@ pub fn build(b: *Builder) void {
 
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
+
+    const dump_exe = b.addExecutable("dump", "src/dump.zig");
+    dump_exe.setTarget(target);
+    dump_exe.setBuildMode(mode);
+    dump_exe.install();
+
+    const dump_cmd = dump_exe.run();
+    dump_cmd.step.dependOn(b.getInstallStep());
+
+    const dump_step = b.step("dump", "Print out a dump of the provided class file");
+    dump_step.dependOn(&dump_cmd.step);
 }

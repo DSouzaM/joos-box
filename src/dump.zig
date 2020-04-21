@@ -29,6 +29,7 @@ pub fn main() !void {
     warn("Super class: {}\n", .{pp.pp_class(c.constant_pool[c.super_class].Class, c, allocator)});
     printInterfaces(c, allocator);
     printFields(c, allocator);
+    printMethods(c, allocator);
 }
 
 fn printConstants(c: structs.ClassFile, allocator: *Allocator) void {
@@ -87,3 +88,11 @@ fn printFields(c: structs.ClassFile, allocator: *Allocator) void {
     warn("\n", .{});
 }
 
+fn printMethods(c: structs.ClassFile, allocator: *Allocator) void {
+    warn("Methods: ", .{});
+    for (c.methods) |method, i| {
+        const sep = if (i == c.methods.len - 1) "" else ", ";
+        warn("{}{}", .{pp.pp_method(method, c, allocator), sep});
+    }
+    warn("\n", .{});
+}

@@ -32,6 +32,7 @@ test "from_file" {
     expect(c.super_class == 13);
     expect(c.interfaces.len == 1);
     expect(c.fields.len == 4);
+    expect(c.methods.len == 4);
 
     c.destroy(allocator);
 }

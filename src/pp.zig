@@ -51,3 +51,7 @@ pub fn pp_utf8(s: var, c: structs.ClassFile, allocator: *Allocator) ![]u8 {
 pub fn pp_field(s: var, c: structs.ClassFile, allocator: *Allocator) ![]u8 {
     return pp_name_and_type(s, c, allocator);
 }
+
+pub fn pp_method(s: var, c: structs.ClassFile, allocator: *Allocator) ![]u8 {
+    return pp_name_and_type(s, c, allocator);
+}

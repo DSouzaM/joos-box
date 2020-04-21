@@ -11,19 +11,22 @@ pub const ClassFile = struct {
     super_class: u16,
     interfaces: []u16,
     fields: []Field,
+    methods: []Method,
 
     fn destroy(self: ClassFile, allocator: *Allocator) void {
-        for (self.constant_pool) |entry| {
-            entry.destroy(allocator);
-        }
-        allocator.free(self.constant_pool);
+        destroyList(ConstantPoolInfo, self.constant_pool, allocator);
         allocator.free(self.interfaces);
-        for (self.fields) |field| {
-            field.destroy(allocator);
-        }
-        allocator.free(self.fields);
+        destroyList(Field, self.fields, allocator);
+        destroyList(Method, self.methods, allocator);
     }
 };
+
+fn destroyList(comptime T: type, list: []T, allocator: *Allocator) void {
+    for (list) |entry| {
+        entry.destroy(allocator);
+    }
+    allocator.free(list);
+}
 
 pub const ConstantPoolTag = enum(u8) {
     Class = 7,
@@ -140,6 +143,35 @@ pub const FieldAccessFlags = enum(u16) {
     Transient = 0x0080,
     Synthetic = 0x0100,
     Enum = 0x4000,
+};
+
+pub const Method = struct {
+    access_flags: u16,
+    name_index: u16,
+    descriptor_index: u16,
+    attributes: []Attribute,
+
+    fn destroy(self: Method, allocator: *Allocator) void {
+        for (self.attributes) |entry| {
+            entry.destroy(allocator);
+        }
+        allocator.free(self.attributes);
+    }
+};
+
+pub const MethodAccessFlags = enum(u16) {
+    Public = 0x0001,
+    Private = 0x0002,
+    Protected = 0x0004,
+    Static =  0x0008,
+    Final = 0x0010,
+    Synchronized = 0x0020,
+    Bridge = 0x0040,
+    Varargs = 0x0080,
+    Native = 0x0100,
+    Abstract = 0x0400,
+    Strict = 0x0800,
+    Synthetic = 0x1000,
 };
 
 pub const Attribute = struct {

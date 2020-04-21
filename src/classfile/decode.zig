@@ -17,6 +17,7 @@ pub fn decode_class_file(input: var, allocator: *Allocator) !structs.ClassFile {
     const super_class = try read_int(u16, input);
     const interfaces = try decode_interfaces(input, allocator);
     const fields = try decode_fields(input, allocator);
+    const methods = try decode_methods(input, allocator);
 
     return structs.ClassFile{
         .magic = magic,
@@ -28,6 +29,7 @@ pub fn decode_class_file(input: var, allocator: *Allocator) !structs.ClassFile {
         .super_class = super_class,
         .interfaces = interfaces,
         .fields = fields,
+        .methods = methods,
     };
 }
 
@@ -148,12 +150,7 @@ fn decode_interfaces(input: var, allocator: *Allocator) ![]u16 {
 }
 
 fn decode_fields(input: var, allocator: *Allocator) ![]structs.Field {
-    const fields_count = try read_int(u16, input);
-    const fields = try allocator.alloc(structs.Field, fields_count);
-    for (fields) |*field| {
-        field.* = try decode_field(input, allocator);
-    }
-    return fields;
+    return decode_list(structs.Field, input, allocator, decode_field);
 }
 
 fn decode_field(input: var, allocator: *Allocator) !structs.Field {
@@ -169,13 +166,25 @@ fn decode_field(input: var, allocator: *Allocator) !structs.Field {
     };
 }
 
+fn decode_methods(input: var, allocator: *Allocator) ![]structs.Method {
+    return decode_list(structs.Method, input, allocator, decode_method);
+}
+
+fn decode_method(input: var, allocator: *Allocator) !structs.Method {
+    const access_flags = try read_int(u16, input);
+    const name_index = try read_int(u16, input);
+    const descriptor_index = try read_int(u16, input);
+    const attributes = try decode_attributes(input, allocator);
+    return structs.Method {
+        .access_flags = access_flags,
+        .name_index = name_index,
+        .descriptor_index = descriptor_index,
+        .attributes = attributes,
+    };
+}
+
 fn decode_attributes(input: var, allocator: *Allocator) ![]structs.Attribute {
-    const attributes_count = try read_int(u16, input);
-    const attributes = try allocator.alloc(structs.Attribute, attributes_count);
-    for (attributes) |*attribute| {
-        attribute.* = try decode_attribute(input, allocator);
-    }
-    return attributes;
+    return decode_list(structs.Attribute, input, allocator, decode_attribute);
 }
 
 fn decode_attribute(input: var, allocator: *Allocator) !structs.Attribute {
@@ -187,6 +196,16 @@ fn decode_attribute(input: var, allocator: *Allocator) !structs.Attribute {
         .attribute_name_index = attribute_name_index,
         .info = info,
     };
+}
+
+// Generic function to decode a list of type T. First 2 bytes of input contain the list size.
+fn decode_list(comptime T: type, input: var, allocator: *Allocator,  decoder: fn (var, *Allocator) anyerror!T) ![]T {
+    const count = try read_int(u16, input);
+    const list = try allocator.alloc(T, count);
+    for (list) |*entry| {
+        entry.* = try decoder(input, allocator);
+    }
+    return list;
 }
 
 test "read_int" {

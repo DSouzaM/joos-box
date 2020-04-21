@@ -1,6 +1,6 @@
 interface Bar {}
 
-public class Foo {
+public class Foo implements Bar {
   private int a;
   public boolean b;
 

@@ -9,12 +9,14 @@ pub const ClassFile = struct {
     access_flags: u16,
     this_class: u16,
     super_class: u16,
+    interfaces: []u16,
 
     fn destroy(self: ClassFile, allocator: *Allocator) void {
         for (self.constant_pool) |entry| {
             entry.destroy(allocator);
         }
         allocator.free(self.constant_pool);
+        allocator.free(self.interfaces);
     }
 };
 

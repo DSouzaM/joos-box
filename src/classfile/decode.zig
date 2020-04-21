@@ -15,6 +15,7 @@ pub fn decode_class_file(input: var, allocator: *Allocator) !structs.ClassFile {
     const access_flags = try read_int(u16, input);
     const this_class = try read_int(u16, input);
     const super_class = try read_int(u16, input);
+    const interfaces = try decode_interfaces(input, allocator);
 
     return structs.ClassFile{
         .magic = magic,
@@ -24,6 +25,7 @@ pub fn decode_class_file(input: var, allocator: *Allocator) !structs.ClassFile {
         .access_flags = access_flags,
         .this_class = this_class,
         .super_class = super_class,
+        .interfaces = interfaces,
     };
 }
 
@@ -45,8 +47,7 @@ fn decode_constant_pool(input: var, allocator: *Allocator) ![]structs.ConstantPo
 }
 
 fn decode_constant_pool_entry(input: var, allocator: *Allocator) !structs.ConstantPoolInfo {
-    const tag_int = try read_int(u8, input);
-    const tag = @intToEnum(structs.ConstantPoolTag, tag_int);
+    const tag = @intToEnum(structs.ConstantPoolTag, try read_int(u8, input));
     return switch (tag) {
         structs.ConstantPoolTag.Class => structs.ConstantPoolInfo{
             .Class = .{
@@ -135,6 +136,15 @@ fn decode_constant_pool_entry(input: var, allocator: *Allocator) !structs.Consta
     };
 }
 
+fn decode_interfaces(input: var, allocator: *Allocator) ![]u16 {
+    const interfaces_count = try read_int(u16, input);
+    const interfaces = try allocator.alloc(u16, interfaces_count);
+    for (interfaces) |*interface| {
+        interface.* = try read_int(u16, input);
+    }
+    return interfaces;
+}
+
 test "read_int" {
     const buf = [_]u8{ 0xCA, 0xFE, 0xBA, 0xBE, 0x01, 0x02, 0x03, 0x04, 0x05 };
     var input = std.io.bitInStream(.Big, std.io.fixedBufferStream(&buf).inStream());
@@ -145,28 +155,17 @@ test "read_int" {
     expect((try read_int(u16, &input)) == 0x0405);
 }
 
+//zig fmt: off
 test "decode_constant_pool" {
     const allocator = std.testing.allocator;
 
     var input = std.io.bitInStream(.Big, std.io.fixedBufferStream(&[_]u8{
-        0x00, 0x08, // constant_pool_size = 8
-        0x07, 0x00,
-        0x02, // 1: class
-            0x05,
-        0x11, 0x22,
-        0x33, 0x44,
-        0x55, 0x66,
-        0x77, 0x88, // 2 (and 3): long
-        0x08, 0x00,
-        0x05, // 4: string
-            0x06,
-        0x55, 0x66,
-        0x77, 0x88,
-        0x11, 0x22,
-        0x33, 0x44, // 5 (and 6): double
-        0x03, 0x12,
-        0x34, 0x56,
-        0x78, // 7: int
+        0x00, 0x08,                                           // constant_pool_size = 8
+        0x07, 0x00, 0x02,                                     // 1: class
+        0x05, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, // 2 (and 3): long
+        0x08, 0x00, 0x05,                                     // 4: string
+        0x06, 0x55, 0x66, 0x77, 0x88, 0x11, 0x22, 0x33, 0x44, // 5 (and 6): double
+        0x03, 0x12, 0x34, 0x56, 0x78,                         // 7: int
     }).inStream());
     var decoded = try decode_constant_pool(&input, allocator);
     expect(decoded.len == 8);
@@ -264,4 +263,21 @@ test "decode_constant_pool_entry" {
     expect(decoded == structs.ConstantPoolTag.InvokeDynamic);
     expect(decoded.InvokeDynamic.bootstrap_method_attr_index == 0x1234);
     expect(decoded.InvokeDynamic.name_and_type_index == 0x5678);
+}
+
+// zig fmt: off
+test "decode_interfaces" {
+    const allocator = std.testing.allocator;
+
+    var input = std.io.bitInStream(.Big, std.io.fixedBufferStream(&[_]u8{
+        0x00, 0x02, // interfaces_size = 8
+        0x12, 0x34,
+        0x56, 0x78
+    }).inStream());
+    var decoded = try decode_interfaces(&input, allocator);
+    expect(decoded.len == 2);
+    expect(decoded[0] == 0x1234);
+    expect(decoded[1] == 0x5678);
+
+    allocator.free(decoded);
 }

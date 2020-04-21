@@ -26,10 +26,11 @@ test "from_file" {
     expect(c.magic == 0xCAFEBABE);
     expect(c.minor_version == 0);
     expect(c.major_version == 55);
-    expect(c.constant_pool.len == 23);
+    expect(c.constant_pool.len == 25);
     expect(c.access_flags == @enumToInt(structs.AccessFlags.Public) | @enumToInt(structs.AccessFlags.Super));
     expect(c.this_class == 4);
     expect(c.super_class == 5);
+    expect(c.interfaces.len == 1);
 
     c.destroy(allocator);
 }

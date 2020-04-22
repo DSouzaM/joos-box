@@ -16,8 +16,9 @@ pub fn decode_class_file(input: var, allocator: *Allocator) !structs.ClassFile {
     const this_class = try read_int(u16, input);
     const super_class = try read_int(u16, input);
     const interfaces = try decode_interfaces(input, allocator);
-    const fields = try decode_fields(input, allocator);
-    const methods = try decode_methods(input, allocator);
+    const fields = try decode_fields(input, constant_pool, allocator);
+    const methods = try decode_methods(input, constant_pool, allocator);
+    const attributes = try decode_attributes(input, constant_pool, allocator);
 
     return structs.ClassFile{
         .magic = magic,
@@ -30,10 +31,13 @@ pub fn decode_class_file(input: var, allocator: *Allocator) !structs.ClassFile {
         .interfaces = interfaces,
         .fields = fields,
         .methods = methods,
+        .attributes = attributes,
     };
 }
 
-fn decode_constant_pool(input: var, allocator: *Allocator) ![]structs.ConstantPoolInfo {
+const Pool = []structs.ConstantPoolInfo;
+
+fn decode_constant_pool(input: var, allocator: *Allocator) !Pool {
     const constant_pool_count = try read_int(u16, input);
     const constant_pool = try allocator.alloc(structs.ConstantPoolInfo, constant_pool_count);
     // Valid constant pool indices start at 1.
@@ -149,15 +153,15 @@ fn decode_interfaces(input: var, allocator: *Allocator) ![]u16 {
     return interfaces;
 }
 
-fn decode_fields(input: var, allocator: *Allocator) ![]structs.Field {
-    return decode_list(structs.Field, input, allocator, decode_field);
+fn decode_fields(input: var, pool: Pool, allocator: *Allocator) ![]structs.Field {
+    return decode_list(structs.Field, input, pool, allocator, decode_field);
 }
 
-fn decode_field(input: var, allocator: *Allocator) !structs.Field {
+fn decode_field(input: var, pool: Pool, allocator: *Allocator) !structs.Field {
     const access_flags = try read_int(u16, input);
     const name_index = try read_int(u16, input);
     const descriptor_index = try read_int(u16, input);
-    const attributes = try decode_attributes(input, allocator);
+    const attributes = try decode_attributes(input, pool, allocator);
     return structs.Field {
         .access_flags = access_flags,
         .name_index = name_index,
@@ -166,15 +170,15 @@ fn decode_field(input: var, allocator: *Allocator) !structs.Field {
     };
 }
 
-fn decode_methods(input: var, allocator: *Allocator) ![]structs.Method {
-    return decode_list(structs.Method, input, allocator, decode_method);
+fn decode_methods(input: var, pool: Pool, allocator: *Allocator) ![]structs.Method {
+    return decode_list(structs.Method, input, pool, allocator, decode_method);
 }
 
-fn decode_method(input: var, allocator: *Allocator) !structs.Method {
+fn decode_method(input: var, pool: Pool, allocator: *Allocator) !structs.Method {
     const access_flags = try read_int(u16, input);
     const name_index = try read_int(u16, input);
     const descriptor_index = try read_int(u16, input);
-    const attributes = try decode_attributes(input, allocator);
+    const attributes = try decode_attributes(input, pool, allocator);
     return structs.Method {
         .access_flags = access_flags,
         .name_index = name_index,
@@ -183,27 +187,66 @@ fn decode_method(input: var, allocator: *Allocator) !structs.Method {
     };
 }
 
-fn decode_attributes(input: var, allocator: *Allocator) ![]structs.Attribute {
-    return decode_list(structs.Attribute, input, allocator, decode_attribute);
+fn decode_attributes(input: var, pool: Pool, allocator: *Allocator) anyerror![]structs.Attribute {
+    return decode_list(structs.Attribute, input, pool, allocator, decode_attribute);
 }
 
-fn decode_attribute(input: var, allocator: *Allocator) !structs.Attribute {
+fn decode_attribute(input: var, pool: Pool, allocator: *Allocator) !structs.Attribute {
     const attribute_name_index = try read_int(u16, input);
     const attribute_length = try read_int(u32, input);
-    const info = try allocator.alloc(u8, attribute_length);
-    if ((try input.*.read(info)) != attribute_length) unreachable;
-    return structs.Attribute {
-        .attribute_name_index = attribute_name_index,
-        .info = info,
+
+    const string = pool[attribute_name_index].Utf8.bytes;
+    return switch (structs.AttributeType.from_string(string)) {
+        .ConstantValue => structs.Attribute { .ConstantValue = .{
+            .constantvalue_index = try read_int(u16, input)
+        }},
+        .Code => blk: {
+            const max_stack = try read_int(u16, input);
+            const max_locals = try read_int(u16, input);
+
+            const code_length = try read_int(u32, input);
+            const code = try allocator.alloc(u8, code_length);
+            if ((try input.*.read(code)) != code_length) unreachable;
+            const exception_table = try decode_list(structs.ExceptionTableEntry, input, pool, allocator, decode_exception_table_entry);
+            const attributes = try decode_attributes(input, pool, allocator);
+
+            break :blk structs.Attribute { .Code = .{
+                .max_stack = max_stack,
+                .max_locals = max_locals,
+                .code = code,
+                .exception_table = exception_table,
+                .attributes = attributes,
+            }};
+        },
+        .SourceFile => structs.Attribute { .SourceFile = .{
+            .sourcefile_index = try read_int(u16, input)
+        }},
+        else => blk: {
+            const info = try allocator.alloc(u8, attribute_length);
+            if ((try input.*.read(info)) != attribute_length) unreachable;
+            break :blk structs.Attribute { .Unsupported = .{
+                .attribute_name_index = attribute_name_index,
+                .info = info,
+            }};
+        }
+    };
+}
+
+fn decode_exception_table_entry(input: var, pool: Pool, allocator: *Allocator) !structs.ExceptionTableEntry {
+    return structs.ExceptionTableEntry {
+        .start_pc = try read_int(u16, input),
+        .end_pc = try read_int(u16, input),
+        .handler_pc = try read_int(u16, input),
+        .catch_type = try read_int(u16, input),
     };
 }
 
 // Generic function to decode a list of type T. First 2 bytes of input contain the list size.
-fn decode_list(comptime T: type, input: var, allocator: *Allocator,  decoder: fn (var, *Allocator) anyerror!T) ![]T {
+fn decode_list(comptime T: type, input: var, pool: Pool, allocator: *Allocator,  decoder: fn (var, Pool, *Allocator) anyerror!T) ![]T {
     const count = try read_int(u16, input);
     const list = try allocator.alloc(T, count);
     for (list) |*entry| {
-        entry.* = try decoder(input, allocator);
+        entry.* = try decoder(input, pool, allocator);
     }
     return list;
 }
@@ -366,13 +409,66 @@ test "decode_fields" {
         0x00, 0x0a, // descriptor_index
         0x00, 0x00, // attributes_count = 0
     }).inStream());
-    var decoded = try decode_fields(&input, allocator);
+    var pool = [2]structs.ConstantPoolInfo {
+        undefined,
+        structs.ConstantPoolInfo { .Utf8 = .{
+            .length = 13,
+            .bytes = "AttributeName"[0..],
+        }}
+    };
+    var decoded = try decode_fields(&input, &pool, allocator);
     expect(decoded.len == 2);
     expect(decoded[0].access_flags == @enumToInt(structs.FieldAccessFlags.Private));
     expect(decoded[0].name_index == 0x07);
     expect(decoded[0].descriptor_index == 0x08);
     expect(decoded[0].attributes.len == 1);
+    expect(decoded[0].attributes[0] == structs.AttributeType.Unsupported);
     expect(decoded[1].access_flags == @enumToInt(structs.FieldAccessFlags.Public));
+    expect(decoded[1].name_index == 0x09);
+    expect(decoded[1].descriptor_index == 0x0a);
+    expect(decoded[1].attributes.len == 0);
+
+    decoded[0].destroy(allocator);
+    decoded[1].destroy(allocator);
+    allocator.free(decoded);
+}
+
+// zig fmt: off
+test "decode_methods" {
+    const allocator = std.testing.allocator;
+
+    var input = std.io.bitInStream(.Big, std.io.fixedBufferStream(&[_]u8{
+        0x00, 0x02, // methods_count = 2
+        // method 1
+        0x00, 0x02, // access_flags
+        0x00, 0x07, // name_index
+        0x00, 0x08, // descriptor_index
+        0x00, 0x01, // attributes_count = 1
+        // attribute 1
+        0x00, 0x01,             // attribute_name_index
+        0x00, 0x00, 0x00, 0x02, // attribute_length
+        0x01, 0x02,
+        // method 2
+        0x00, 0x01, // access flags
+        0x00, 0x09, // name_index
+        0x00, 0x0a, // descriptor_index
+        0x00, 0x00, // attributes_count = 0
+    }).inStream());
+    var pool = [2]structs.ConstantPoolInfo {
+        undefined,
+        structs.ConstantPoolInfo { .Utf8 = .{
+            .length = 13,
+            .bytes = "AttributeName"[0..],
+        }}
+    };
+    var decoded = try decode_methods(&input, &pool, allocator);
+    expect(decoded.len == 2);
+    expect(decoded[0].access_flags == @enumToInt(structs.MethodAccessFlags.Private));
+    expect(decoded[0].name_index == 0x07);
+    expect(decoded[0].descriptor_index == 0x08);
+    expect(decoded[0].attributes.len == 1);
+    expect(decoded[0].attributes[0] == structs.AttributeType.Unsupported);
+    expect(decoded[1].access_flags == @enumToInt(structs.MethodAccessFlags.Public));
     expect(decoded[1].name_index == 0x09);
     expect(decoded[1].descriptor_index == 0x0a);
     expect(decoded[1].attributes.len == 0);
@@ -387,30 +483,76 @@ test "decode_attributes" {
     const allocator = std.testing.allocator;
 
     var input = std.io.bitInStream(.Big, std.io.fixedBufferStream(&[_]u8{
-        0x00, 0x02,                                 // attributes_count = 2
+        0x00, 0x04,                                 // attributes_count
         // attribute 1
-        0x00, 0x02,                                 // attribute_name_index
-        0x00, 0x00, 0x00, 0x07,                     // attribute_length
-        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+        0x00, 0x01,                                 // -> "AttributeName", unsupported
+        0x00, 0x00, 0x00, 0x07,                         // attribute_length
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,       // info
         // attribute 2
-        0x00, 0x01,                                 // attribute_name_index
-        0x00, 0x00, 0x00, 0x02,                     // attribute_length
-        0x01, 0x02,
+        0x00, 0x02,                                 // -> "ConstantValue"
+        0x00, 0x00, 0x00, 0x02,                         // attribute_length
+        0x01, 0x02,                                     // constantvalue_index
+        // attribute 3
+        0x00, 0x03,                                 // -> "Code"
+        0x00, 0x00, 0x00, 0x25,                         // attribute_length
+        0x11, 0x11,                                     // max_stack
+        0x22, 0x22,                                     // max_locals
+        0x00, 0x00, 0x00, 0x03,                         // code_length
+        0x10, 0x42, 0xAC,                               // code
+        0x00, 0x02,                                     // exception_table_length
+        0x11, 0x22, 0x33, 0x44, 0x55, 066, 0x77, 0x88,      // exception_table_entry 1
+        0x12, 0x23, 0x34, 0x45, 0x56, 067, 0x78, 0x89,      // exception_table_entry 2
+        0x00, 0x01,                                     // attributes_count
+        0x00, 0x01,                                     // -> "AttributeName", unsupported
+        0x00, 0x00, 0x00, 0x00,                         // attribute_length
+        // attribute 4
+        0x00, 0x04,                                 // -> "SourceFile"
+        0x00, 0x00, 0x00, 0x02,                         // attribute_length
+        0x03, 0x04,                                     // sourcefile_index
     }).inStream());
-    var decoded = try decode_attributes(&input, allocator);
-    expect(decoded.len == 2);
-    expect(decoded[0].attribute_name_index == 0x02);
-    expect(decoded[0].info.len == 7);
-    for (decoded[0].info) |byte, i| {
-        expect(byte == (i+1));
-    }
-    expect(decoded[1].attribute_name_index == 0x01);
-    expect(decoded[1].info.len == 2);
-    for (decoded[1].info) |byte, i| {
+    var pool = [_]structs.ConstantPoolInfo {
+        undefined,
+        structs.ConstantPoolInfo { .Utf8 = .{
+            .length = 13,
+            .bytes = "AttributeName"[0..],
+        }},
+        structs.ConstantPoolInfo { .Utf8 = .{
+            .length = 13,
+            .bytes = "ConstantValue"[0..],
+        }},
+        structs.ConstantPoolInfo { .Utf8 = .{
+            .length = 4,
+            .bytes = "Code"[0..],
+        }},
+        structs.ConstantPoolInfo { .Utf8 = .{
+            .length = 10,
+            .bytes = "SourceFile"[0..],
+        }},
+    };
+    var decoded = try decode_attributes(&input, &pool, allocator);
+    expect(decoded.len == 4);
+    expect(decoded[0] == .Unsupported);
+    expect(decoded[0].Unsupported.attribute_name_index == 0x01);
+    expect(decoded[0].Unsupported.info.len == 7);
+    for (decoded[0].Unsupported.info) |byte, i| {
         expect(byte == (i+1));
     }
 
-    decoded[0].destroy(allocator);
-    decoded[1].destroy(allocator);
+    expect(decoded[1] == .ConstantValue);
+    expect(decoded[1].ConstantValue.constantvalue_index == 0x0102);
+
+    expect(decoded[2] == .Code);
+    expect(decoded[2].Code.max_stack == 0x1111);
+    expect(decoded[2].Code.max_locals == 0x2222);
+    expect(decoded[2].Code.code.len == 3);
+    expect(decoded[2].Code.exception_table.len == 2);
+    expect(decoded[2].Code.attributes.len == 1);
+
+    expect(decoded[3] == .SourceFile);
+    expect(decoded[3].SourceFile.sourcefile_index == 0x0304);
+
+    for (decoded) |entry| {
+        entry.destroy(allocator);
+    }
     allocator.free(decoded);
 }

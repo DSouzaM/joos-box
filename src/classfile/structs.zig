@@ -1,5 +1,6 @@
 const std = @import("std");
-const Allocator = std.mem.Allocator;
+const mem = std.mem;
+const Allocator = mem.Allocator;
 
 pub const ClassFile = struct {
     magic: u32,
@@ -12,12 +13,14 @@ pub const ClassFile = struct {
     interfaces: []u16,
     fields: []Field,
     methods: []Method,
+    attributes: []Attribute,
 
     fn destroy(self: ClassFile, allocator: *Allocator) void {
         destroyList(ConstantPoolInfo, self.constant_pool, allocator);
         allocator.free(self.interfaces);
         destroyList(Field, self.fields, allocator);
         destroyList(Method, self.methods, allocator);
+        destroyList(Attribute, self.attributes, allocator);
     }
 };
 
@@ -85,7 +88,7 @@ pub const ConstantPoolInfo = union(ConstantPoolTag) {
     },
     Utf8: struct {
         length: u16,
-        bytes: []u8,
+        bytes: []const u8,
     },
     MethodHandle: struct {
         reference_kind: u8, reference_index: u16
@@ -126,10 +129,7 @@ pub const Field = struct {
     attributes: []Attribute,
 
     fn destroy(self: Field, allocator: *Allocator) void {
-        for (self.attributes) |entry| {
-            entry.destroy(allocator);
-        }
-        allocator.free(self.attributes);
+        destroyList(Attribute, self.attributes, allocator);
     }
 };
 
@@ -152,10 +152,7 @@ pub const Method = struct {
     attributes: []Attribute,
 
     fn destroy(self: Method, allocator: *Allocator) void {
-        for (self.attributes) |entry| {
-            entry.destroy(allocator);
-        }
-        allocator.free(self.attributes);
+        destroyList(Attribute, self.attributes, allocator);
     }
 };
 
@@ -174,11 +171,58 @@ pub const MethodAccessFlags = enum(u16) {
     Synthetic = 0x1000,
 };
 
-pub const Attribute = struct {
-    attribute_name_index: u16,
-    info: []u8,
+pub const AttributeType = enum {
+    ConstantValue,
+    Code,
+    SourceFile,
+    Unsupported,
 
-    fn destroy(self: Attribute, allocator: *Allocator) void {
-        allocator.free(self.info);
+    pub fn from_string(str: []const u8) AttributeType {
+        return std.meta.stringToEnum(AttributeType, str) orelse .Unsupported;
     }
 };
+
+pub const Attribute = union(AttributeType) {
+    ConstantValue: struct {
+        constantvalue_index: u16,
+    },
+    Code: struct {
+        max_stack: u16,
+        max_locals: u16,
+        code: []const u8,
+        exception_table: []ExceptionTableEntry,
+        attributes: []Attribute
+    },
+    SourceFile: struct {
+        sourcefile_index: u16,
+    },
+    Unsupported : struct {
+        attribute_name_index: u16,
+        info: []u8,
+    },
+
+    fn destroy(self: Attribute, allocator: *Allocator) void {
+        switch (self) {
+            .Code => |s| {
+                allocator.free(s.code);
+                allocator.free(s.exception_table);
+                destroyList(Attribute, s.attributes, allocator);
+            },
+            .Unsupported => |s| allocator.free(s.info),
+            else => {}
+        }
+    }
+};
+
+pub const ExceptionTableEntry = struct {
+    start_pc: u16,
+    end_pc: u16,
+    handler_pc: u16,
+    catch_type: u16,
+};
+
+test "attribute type from_string" {
+    std.testing.expect(AttributeType.from_string("ConstantValue"[0..]) == .ConstantValue);
+    std.testing.expect(AttributeType.from_string("Code"[0..]) == .Code);
+    std.testing.expect(AttributeType.from_string("SomethingElse"[0..]) == .Unsupported);
+}

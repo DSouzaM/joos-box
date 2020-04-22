@@ -30,6 +30,7 @@ pub fn main() !void {
     printInterfaces(c, allocator);
     printFields(c, allocator);
     printMethods(c, allocator);
+    printAttributes(c, allocator);
 }
 
 fn printConstants(c: structs.ClassFile, allocator: *Allocator) void {
@@ -93,6 +94,15 @@ fn printMethods(c: structs.ClassFile, allocator: *Allocator) void {
     for (c.methods) |method, i| {
         const sep = if (i == c.methods.len - 1) "" else ", ";
         warn("{}{}", .{pp.pp_method(method, c, allocator), sep});
+    }
+    warn("\n", .{});
+}
+
+fn printAttributes(c: structs.ClassFile, allocator: *Allocator) void {
+    warn("Attributes: ", .{});
+    for (c.attributes) |attribute, i| {
+        const sep = if (i == c.attributes.len - 1) "" else ", ";
+        warn("{}{}", .{pp.pp_attribute(attribute, c, allocator), sep});
     }
     warn("\n", .{});
 }

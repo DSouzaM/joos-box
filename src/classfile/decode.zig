@@ -3,12 +3,20 @@ const structs = @import("structs.zig");
 const expect = std.testing.expect;
 const Allocator = std.mem.Allocator;
 
+const DecodeError = error {
+    InvalidClassFile,
+};
+
 fn read_int(comptime T: type, input: var) !T {
     return input.*.readBitsNoEof(T, @bitSizeOf(T));
 }
 
 pub fn decode_class_file(input: var, allocator: *Allocator) !structs.ClassFile {
     const magic = try read_int(u32, input);
+
+    // Format checking: magic.
+    if (magic != 0xCAFEBABE) return DecodeError.InvalidClassFile;
+
     const minor_version = try read_int(u16, input);
     const major_version = try read_int(u16, input);
     const constant_pool = try decode_constant_pool(input, allocator);
@@ -19,6 +27,14 @@ pub fn decode_class_file(input: var, allocator: *Allocator) !structs.ClassFile {
     const fields = try decode_fields(input, constant_pool, allocator);
     const methods = try decode_methods(input, constant_pool, allocator);
     const attributes = try decode_attributes(input, constant_pool, allocator);
+
+    // Format checking: the class file must not have extra bytes at the end.
+    if (input.in_stream.readByte()) {
+        return DecodeError.InvalidClassFile;
+    } else |_| {}
+
+    // Other format checking (mostly verifying that constant pool indices point to constants of the correct type)
+    // is also required by the spec here. For simplicity, assume the classfile is valid. :)
 
     return structs.ClassFile{
         .magic = magic,
@@ -259,6 +275,15 @@ test "read_int" {
     expect((try read_int(u16, &input)) == 0x0102);
     expect((try read_int(u8, &input)) == 0x03);
     expect((try read_int(u16, &input)) == 0x0405);
+}
+
+test "invalid classfile" {
+    const buf = [_]u8{ 0xCA, 0xFE, 0xDE, 0xAD, 0x01, 0x02, 0x03, 0x04, 0x05 };
+    var input = std.io.bitInStream(.Big, std.io.fixedBufferStream(&buf).inStream());
+
+    if (decode_class_file(&input, std.testing.allocator)) {
+        unreachable;
+    } else |_| {}
 }
 
 //zig fmt: off

@@ -26,7 +26,9 @@ pub fn main() !void {
     printConstants(c, allocator);
     warn("Access flags: 0x{X:0>4}\n", .{c.access_flags});
     warn("This class: {}\n", .{pp.pp_class(c.constant_pool[c.this_class].Class, c, allocator)});
-    warn("Super class: {}\n", .{pp.pp_class(c.constant_pool[c.super_class].Class, c, allocator)});
+    if (c.super_class != 0) {
+        warn("Super class: {}\n", .{pp.pp_class(c.constant_pool[c.super_class].Class, c, allocator)});
+    }
     printInterfaces(c, allocator);
     printFields(c, allocator);
     printMethods(c, allocator);

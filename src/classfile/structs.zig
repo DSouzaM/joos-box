@@ -88,6 +88,7 @@ pub const ConstantPoolInfo = union(ConstantPoolTag) {
     },
     Utf8: struct {
         length: u16,
+        // TODO: these should always be decoded/interpreted as MUTF-8
         bytes: []const u8,
     },
     MethodHandle: struct {

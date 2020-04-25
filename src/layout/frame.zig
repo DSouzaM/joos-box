@@ -12,7 +12,7 @@ const ConstantPool = @import("constant_pool.zig").ConstantPool;
 // Unfortunately, on 64-bit, every local/operand requires at most 64 bits, but we still need
 // to split longs and doubles across two indices.
 
-const Frame = [*]usize;
+pub const Frame = [*]usize;
 
 const Header = packed struct {
     // public fields
@@ -36,7 +36,7 @@ pub fn initFrame(frame: Frame, return_address: [*] const u8, constant_pool: *Con
     header.return_address = return_address;
     header.constant_pool = constant_pool;
     header.max_locals = max_locals;
-    header.stack_index = header_size + max_locals;
+    header.stack_index = header.size;
 }
 
 inline fn asHeader(frame: Frame) *Header {
@@ -73,12 +73,12 @@ pub inline fn writeLocal(frame: Frame, local: u16, value: var) void {
 
 pub inline fn pop(frame: Frame) usize {
     const result = stackPointer(frame)[0];
-    asHeader(frame).stack_index -= 1;
+    asHeader(frame).stack_index += 1;
     return result;
 }
 
 pub inline fn push(frame: Frame, value: var) void {
-    asHeader(frame).stack_index += 1;
+    asHeader(frame).stack_index -= 1;
     stackPointer(frame)[0] = @intCast(usize, value);
 }
 

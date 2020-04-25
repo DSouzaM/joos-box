@@ -178,7 +178,7 @@ pub const AttributeType = enum {
     SourceFile,
     Unsupported,
 
-    pub fn from_string(str: []const u8) AttributeType {
+    pub fn fromString(str: []const u8) AttributeType {
         return std.meta.stringToEnum(AttributeType, str) orelse .Unsupported;
     }
 };
@@ -222,8 +222,8 @@ pub const ExceptionTableEntry = struct {
     catch_type: u16,
 };
 
-test "attribute type from_string" {
-    std.testing.expect(AttributeType.from_string("ConstantValue"[0..]) == .ConstantValue);
-    std.testing.expect(AttributeType.from_string("Code"[0..]) == .Code);
-    std.testing.expect(AttributeType.from_string("SomethingElse"[0..]) == .Unsupported);
+test "attribute type fromString" {
+    std.testing.expect(AttributeType.fromString("ConstantValue"[0..]) == .ConstantValue);
+    std.testing.expect(AttributeType.fromString("Code"[0..]) == .Code);
+    std.testing.expect(AttributeType.fromString("SomethingElse"[0..]) == .Unsupported);
 }

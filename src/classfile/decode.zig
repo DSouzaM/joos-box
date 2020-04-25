@@ -212,7 +212,7 @@ fn decode_attribute(input: var, pool: Pool, allocator: *Allocator) !structs.Attr
     const attribute_length = try read_int(u32, input);
 
     const string = pool[attribute_name_index].Utf8.bytes;
-    return switch (structs.AttributeType.from_string(string)) {
+    return switch (structs.AttributeType.fromString(string)) {
         .ConstantValue => structs.Attribute { .ConstantValue = .{
             .constantvalue_index = try read_int(u16, input)
         }},

@@ -7,7 +7,7 @@ const Allocator = std.mem.Allocator;
 const decode = @import("classfile/decode.zig");
 const structs = @import("classfile/structs.zig");
 
-pub fn from_file(path: []const u8, allocator: *Allocator) !structs.ClassFile {
+pub fn fromFile(path: []const u8, allocator: *Allocator) !structs.ClassFile {
     // TODO: support any directory
     const cwd = fs.cwd();
     const file = try cwd.openFile(path, .{});
@@ -19,9 +19,9 @@ pub fn from_file(path: []const u8, allocator: *Allocator) !structs.ClassFile {
     return decode.decode_class_file(&input, allocator);
 }
 
-test "from_file" {
+test "fromFile" {
     const allocator = std.testing.allocator;
-    const c = try from_file("test/res/Foo.class", allocator);
+    const c = try fromFile("test/res/Foo.class", allocator);
 
     expect(c.magic == 0xCAFEBABE);
     expect(c.minor_version == 0);

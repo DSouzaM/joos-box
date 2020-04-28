@@ -43,14 +43,14 @@ pub const Stack = struct {
         }
 
         self.sp -= to_alloc;
-        return Stack.frame(self);
+        return self.frame();
     }
 
     pub fn popFrame(self: *Self) !Frame {
         assert(self.sp < self.data.len);
-        const to_free = frame.size(Stack.frame(self));
+        const to_free = frame.size(self.frame());
         self.sp += to_free;
-        return Stack.frame(self);
+        return self.frame();
     }
 
     fn resize(self: *Self, desired_size: usize) !void {
@@ -78,7 +78,7 @@ test "allocation and reallocation" {
     stack.data[1] = 43;
     stack.sp = 0;
 
-    try Stack.resize(&stack, 7);
+    try stack.resize(7);
     expect(stack.data[6] == 42);
     expect(stack.data[7] == 43);
     expect(stack.sp == 6);
@@ -87,7 +87,7 @@ test "allocation and reallocation" {
     stack.data[5] = 41;
     stack.sp = 4;
 
-    try Stack.resize(&stack, 16);
+    try stack.resize(16);
     expect(stack.data[12] == 40);
     expect(stack.data[13] == 41);
     expect(stack.data[14] == 42);
@@ -104,7 +104,7 @@ test "frame pushing and popping" {
     var stack = try Stack.init(init_size, allocator);
 
     // | frame1 ->
-    var currentFrame = try Stack.pushFrame(&stack, 2, 2);
+    var currentFrame = try stack.pushFrame(2, 2);
     frame.initFrame(currentFrame, undefined, undefined, 2, 2);
     frame.writeLocal(currentFrame, 0, 42);
     frame.writeLocal(currentFrame, 1, 23);
@@ -112,7 +112,7 @@ test "frame pushing and popping" {
     frame.push(currentFrame, 69);
 
     // | frame1, frame2 ->
-    currentFrame = try Stack.pushFrame(&stack, 2, 2);
+    currentFrame = try stack.pushFrame(2, 2);
     frame.initFrame(currentFrame, undefined, undefined, 2, 2);
     frame.writeLocal(currentFrame, 0, 11);
     frame.writeLocal(currentFrame, 1, 22);
@@ -124,8 +124,8 @@ test "frame pushing and popping" {
     expect(frame.readLocal(currentFrame, 1) == 22);
 
     // | frame1, frame3 ->
-    _ = try Stack.popFrame(&stack);
-    currentFrame = try Stack.pushFrame(&stack, 2, 8);
+    _ = try stack.popFrame();
+    currentFrame = try stack.pushFrame(2, 8);
     frame.initFrame(currentFrame, undefined, undefined, 2, 8);
     frame.writeLocal(currentFrame, 0, 99);
     frame.writeLocal(currentFrame, 1, 99);
@@ -142,13 +142,13 @@ test "frame pushing and popping" {
     }
 
     // | frame1 ->
-    currentFrame = try Stack.popFrame(&stack);
+    currentFrame = try stack.popFrame();
     expect(frame.readLocal(currentFrame, 0) == 42);
     expect(frame.readLocal(currentFrame, 1) == 23);
     expect(frame.pop(currentFrame) == 69);
     expect(frame.pop(currentFrame) == 12);
 
-    _ = try Stack.popFrame(&stack);
+    _ = try stack.popFrame();
 
     stack.deinit();
 }

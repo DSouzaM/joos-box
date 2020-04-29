@@ -4,7 +4,7 @@ const expect = std.testing.expect;
 const Allocator = std.mem.Allocator;
 
 const DecodeError = error {
-    InvalidClassFile,
+    ClassFormatError,
 };
 
 fn read_int(comptime T: type, input: var) !T {
@@ -15,7 +15,7 @@ pub fn decode_class_file(input: var, allocator: *Allocator) !structs.ClassFile {
     const magic = try read_int(u32, input);
 
     // Format checking: magic.
-    if (magic != 0xCAFEBABE) return DecodeError.InvalidClassFile;
+    if (magic != 0xCAFEBABE) return DecodeError.ClassFormatError;
 
     const minor_version = try read_int(u16, input);
     const major_version = try read_int(u16, input);
@@ -30,7 +30,7 @@ pub fn decode_class_file(input: var, allocator: *Allocator) !structs.ClassFile {
 
     // Format checking: the class file must not have extra bytes at the end.
     if (input.in_stream.readByte()) {
-        return DecodeError.InvalidClassFile;
+        return DecodeError.ClassFormatError;
     } else |_| {}
 
     // Other format checking (mostly verifying that constant pool indices point to constants of the correct type)

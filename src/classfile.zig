@@ -1,16 +1,23 @@
 const std = @import("std");
 const fs = std.fs;
+const Dir = fs.Dir;
 const io = std.io;
 const expect = std.testing.expect;
+const expectError = std.testing.expectError;
 const Allocator = std.mem.Allocator;
 
 const decode = @import("classfile/decode.zig");
 const structs = @import("classfile/structs.zig");
 
-pub fn fromFile(path: []const u8, allocator: *Allocator) !structs.ClassFile {
-    // TODO: support any directory
-    const cwd = fs.cwd();
-    const file = try cwd.openFile(path, .{});
+const ClassFileError = error {
+    ClassNotFoundError,
+};
+
+pub fn fromFile(cwd: Dir, path: []const u8, allocator: *Allocator) !structs.ClassFile {
+    const file = cwd.openFile(path, .{}) catch |err| switch(err) {
+        error.FileNotFound => return error.ClassNotFoundError,
+        else => return err,
+    };
     defer file.close();
 
     // Class files are encoded in big-endian.
@@ -21,7 +28,7 @@ pub fn fromFile(path: []const u8, allocator: *Allocator) !structs.ClassFile {
 
 test "fromFile" {
     const allocator = std.testing.allocator;
-    const c = try fromFile("test/res/Foo.class", allocator);
+    const c = try fromFile(fs.cwd(), "test/res/Foo.class", allocator);
 
     expect(c.magic == 0xCAFEBABE);
     expect(c.minor_version == 0);
@@ -36,4 +43,11 @@ test "fromFile" {
     expect(c.attributes.len == 1);
 
     c.destroy(allocator);
+}
+
+test "fromFile failure" {
+    const allocator = std.testing.allocator;
+    const c = fromFile(fs.cwd(), "does/not/Exist.class", allocator);
+
+    expectError(error.ClassNotFoundError, c);
 }
